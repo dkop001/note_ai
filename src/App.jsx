@@ -1,9 +1,12 @@
 import { useRef, useState, useEffect, lazy, Suspense, useCallback } from 'react';
-import Header from './components/Header';
 import NoteInput from './components/NoteInput';
 import SummaryResult from './components/SummaryResult';
 import Auth from './components/Auth';
 import Onboarding from './components/Onboarding';
+import TopBar from './components/TopBar';
+import LeftSidebar from './components/LeftSidebar';
+import RightSidebar from './components/RightSidebar';
+import StatusBar from './components/StatusBar';
 import { SkeletonNoteInput, SkeletonSummary } from './components/Skeleton';
 import { summarizeNotes, generateQuizFromSummary } from './lib/ai';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -27,6 +30,179 @@ const STRIP_ITEMS = [
   { icon: FileText,      label: 'PDF & file support',    sub: 'Upload PDFs, docs, or raw text.' },
 ];
 
+const PLACEHOLDER_VIEWS = ['notes', 'ai', 'study', 'graph', 'search', 'settings'];
+
+function HomeView({ noteText, handleTextChange, uploadedSource, setUploadedSource, handleFileLoaded, handleSummarize, isLoading, onClear, editorMode, handleEditorModeChange, onboardingStep, error, summary, handleQuizAction, isGeneratingQuiz, hasQuizForCurrentSummary, user, noteId, noteInputRef, goHowItWorks }) {
+  return (
+    <>
+      <section className="hero-section" aria-labelledby="hero-title">
+        <div className="hero-copy">
+          <div className="hero-eyebrow">
+            <Sparkles size={16} />
+            AI workspace for sharper notes
+          </div>
+          <h2 id="hero-title">
+            Turn chaos<br />into{' '}
+            <span style={{
+              background: 'linear-gradient(90deg, var(--accent-primary), hsl(190,78%,52%))',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}>clarity.</span>
+          </h2>
+          <p>
+            Paste rough notes, upload study files, and get clean summaries plus quiz-ready recall in seconds.
+          </p>
+          <div className="hero-ctas">
+            <button className="btn-primary hero-cta-primary" onClick={() => noteInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+              Get started free <ArrowRight size={16} />
+            </button>
+            <button className="hero-cta-ghost" onClick={goHowItWorks}>
+              <PlayCircle size={18} />
+              See how it works
+            </button>
+          </div>
+          <div className="hero-pills">
+            <span className="hero-pill"><Zap size={13} /> Instant summaries</span>
+            <span className="hero-pill"><BrainCircuit size={13} /> Smart quizzes</span>
+            <span className="hero-pill"><Shield size={13} /> Secure &amp; private</span>
+          </div>
+        </div>
+        <div className="hero-visual" aria-hidden="true">
+          <div className="hero-glass-card hero-glass-card-main">
+            <div className="hero-card-topline">
+              <span>AI ENGINE</span>
+              <span>LIVE</span>
+            </div>
+            <div className="hero-card-title">Lecture Notes</div>
+            <div className="hero-card-lines"><span /><span /><span /></div>
+            <div className="hero-progress"><span style={{ width: '72%' }} /></div>
+          </div>
+          <div className="hero-glass-card hero-floating-card hero-floating-card-left">
+            <FileText size={18} />
+            <div><strong>PDF ready</strong><span>18 key ideas</span></div>
+          </div>
+          <div className="hero-glass-card hero-floating-card hero-floating-card-right">
+            <BrainCircuit size={18} />
+            <div><strong>Quiz built</strong><span>7 questions</span></div>
+          </div>
+          <div className="hero-glass-card hero-floating-pill">
+            <WandSparkles size={16} />
+            Clean summary
+          </div>
+        </div>
+      </section>
+
+      <div className="feature-strip feature-strip-desktop">
+        {STRIP_ITEMS.map(({ icon: Icon, label, sub }) => (
+          <div className="feature-strip-item" key={label}>
+            <div className="feature-strip-icon"><Icon size={18} /></div>
+            <div>
+              <div className="feature-strip-label">{label}</div>
+              <div className="feature-strip-sub">{sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="feature-marquee-outer">
+        <div className="feature-marquee-track" aria-hidden="true">
+          {[...STRIP_ITEMS, ...STRIP_ITEMS].map(({ icon: Icon, label, sub }, i) => (
+            <div className="feature-marquee-card" key={i}>
+              <div className="feature-marquee-icon"><Icon size={17} /></div>
+              <div>
+                <div className="feature-strip-label">{label}</div>
+                <div className="feature-strip-sub">{sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div ref={noteInputRef}>
+        <NoteInput
+          text={noteText}
+          onTextChange={handleTextChange}
+          uploadedSource={uploadedSource}
+          onUploadedSourceChange={setUploadedSource}
+          onFileLoaded={handleFileLoaded}
+          onSummarize={handleSummarize}
+          isLoading={isLoading}
+          onClear={onClear}
+          editorMode={editorMode}
+          onEditorModeChange={handleEditorModeChange}
+          onboardingStep={onboardingStep}
+        />
+      </div>
+
+      {error && (
+        <div style={{
+          marginTop: '1.5rem', padding: '0.875rem 1rem',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: 'hsla(0,84%,60%,0.1)', color: 'hsl(0,84%,60%)',
+          textAlign: 'center', border: '1px solid hsla(0,84%,60%,0.2)',
+          fontSize: '0.9375rem', wordBreak: 'break-word',
+          maxWidth: '800px', margin: '1.5rem auto 0',
+        }}>{error}</div>
+      )}
+
+      <SummaryResult
+        summary={summary}
+        onGenerateQuiz={handleQuizAction}
+        isGeneratingQuiz={isGeneratingQuiz}
+        hasQuiz={hasQuizForCurrentSummary}
+        isStreaming={isLoading}
+        userId={user?.id || ''}
+        noteId={noteId}
+        noteText={noteText}
+      />
+    </>
+  );
+}
+
+function PlaceholderView({ view }) {
+  const icons = {
+    notes: FileText, ai: BrainCircuit, study: BookOpen, graph: Share2,
+    search: LayoutGrid, settings: LayoutGrid,
+  };
+  const titles = {
+    notes: 'Notes Workspace', ai: 'AI Studio', study: 'Study Center',
+    graph: 'Knowledge Graph', search: 'Search', settings: 'Settings',
+  };
+  const descs = {
+    notes: 'Create, edit, and organize your notes with folders, tags, and templates.',
+    ai: 'Chat with AI, generate quizzes, flashcards, mind maps, and more.',
+    study: 'Review with summaries, quizzes, flashcards, and revision planning.',
+    graph: 'Visualize connections between your notes with an interactive knowledge graph.',
+    search: 'Search across all your notes, folders, and tags.',
+    settings: 'Manage your account, preferences, and workspace settings.',
+  };
+  const Icon = icons[view] || LayoutGrid;
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '4rem 2rem', textAlign: 'center', minHeight: '60vh',
+    }}>
+      <div style={{
+        width: '64px', height: '64px', borderRadius: 'var(--radius-xl)',
+        background: 'var(--bg-active)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginBottom: '1.5rem',
+      }}>
+        <Icon size={28} style={{ color: 'var(--accent-primary)' }} />
+      </div>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '0.75rem' }}>{titles[view]}</h2>
+      <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', lineHeight: 1.7, fontSize: '0.9375rem' }}>{descs[view]}</p>
+      <div style={{
+        marginTop: '2rem', padding: '1rem 1.5rem',
+        borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)',
+        backgroundColor: 'var(--bg-secondary)', fontSize: '0.8125rem', color: 'var(--text-tertiary)',
+      }}>
+        Coming soon — check back for updates
+      </div>
+    </div>
+  );
+}
+
 function AppContent() {
   const [summary, setSummary]               = useState('');
   const [noteText, setNoteText]             = useState('');
@@ -42,9 +218,21 @@ function AppContent() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [noteId, setNoteId]                 = useState('');
-  const { user, loading: authLoading, isNewUser, clearNewUserFlag } = useAuth();
+  const [sidebarOpen, setSidebarOpen]       = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const { user, loading: authLoading } = useAuth();
 
   const noteInputRef = useRef(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) setSidebarOpen(false);
+      else setSidebarOpen(true);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (user && !user?.user_metadata?.onboarding_complete) {
@@ -63,7 +251,6 @@ function AppContent() {
       });
     }
   };
-
 
   useEffect(() => {
     if (!noteId) {
@@ -85,9 +272,9 @@ function AppContent() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const goHome        = () => { setCurrentView('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const goFeatures    = () => { setCurrentView('features'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const goHowItWorks  = () => { setCurrentView('howItWorks'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goHome = () => { setCurrentView('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goFeatures = () => { setCurrentView('features'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goHowItWorks = () => { setCurrentView('howItWorks'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   const handleGetStarted = () => {
     if (currentView !== 'home') {
@@ -158,188 +345,93 @@ function AppContent() {
     handleGenerateQuiz(summaryText);
   };
 
+  const handleViewChange = (view) => {
+    setCurrentView(view);
+  };
+
+  const isPlacholderView = PLACEHOLDER_VIEWS.includes(currentView);
+  const isLandingView = currentView === 'home' || currentView === 'features' || currentView === 'howItWorks';
+
   return (
-    <div className="app-shell">
-      <Header
-        currentView={currentView}
-        onAuthClick={() => setIsAuthOpen(true)}
-        onGoHome={goHome}
-        onGoFeatures={goFeatures}
-        onGoHowItWorks={goHowItWorks}
-        onGetStarted={handleGetStarted}
-      />
+    <div className={`workspace-shell${rightPanelOpen ? ' has-right-panel' : ''}`}>
+      <div className="workspace-topbar">
+        <TopBar
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          onAuthClick={() => setIsAuthOpen(true)}
+          onToggleSidebar={() => setSidebarOpen(s => !s)}
+          sidebarOpen={sidebarOpen}
+          onToggleRightPanel={() => setRightPanelOpen(p => !p)}
+          rightPanelOpen={rightPanelOpen}
+        />
+      </div>
 
-      <main className="app-main">
+      <div className="workspace-sidebar">
+        <LeftSidebar
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          isOpen={sidebarOpen}
+        />
+      </div>
 
+      <div className="workspace-main">
         {currentView === 'home' && (
-          <>
-            <section className="hero-section" aria-labelledby="hero-title">
-              <div className="hero-copy">
-                <div className="hero-eyebrow">
-                  <Sparkles size={16} />
-                  AI workspace for sharper notes
-                </div>
-                <h2 id="hero-title">
-                  Turn chaos<br />into{' '}
-                  <span style={{
-                    background: 'linear-gradient(90deg, var(--accent-primary), hsl(190,78%,52%))',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                  }}>clarity.</span>
-                </h2>
-                <p>
-                  Paste rough notes, upload study files, and get clean summaries plus quiz-ready recall in seconds.
-                </p>
-
-                <div className="hero-ctas">
-                  <button className="btn-primary hero-cta-primary" onClick={handleGetStarted}>
-                    Get started free <ArrowRight size={16} />
-                  </button>
-                  <button className="hero-cta-ghost" onClick={goHowItWorks}>
-                    <PlayCircle size={18} />
-                    See how it works
-                  </button>
-                </div>
-
-                <div className="hero-pills">
-                  <span className="hero-pill"><Zap size={13} /> Instant summaries</span>
-                  <span className="hero-pill"><BrainCircuit size={13} /> Smart quizzes</span>
-                  <span className="hero-pill"><Shield size={13} /> Secure &amp; private</span>
-                </div>
-              </div>
-
-              <div className="hero-visual" aria-hidden="true">
-                <div className="hero-glass-card hero-glass-card-main">
-                  <div className="hero-card-topline">
-                    <span>AI ENGINE</span>
-                    <span>LIVE</span>
-                  </div>
-                  <div className="hero-card-title">Lecture Notes</div>
-                  <div className="hero-card-lines"><span /><span /><span /></div>
-                  <div className="hero-progress"><span style={{ width: '72%' }} /></div>
-                </div>
-                <div className="hero-glass-card hero-floating-card hero-floating-card-left">
-                  <FileText size={18} />
-                  <div><strong>PDF ready</strong><span>18 key ideas</span></div>
-                </div>
-                <div className="hero-glass-card hero-floating-card hero-floating-card-right">
-                  <BrainCircuit size={18} />
-                  <div><strong>Quiz built</strong><span>7 questions</span></div>
-                </div>
-                <div className="hero-glass-card hero-floating-pill">
-                  <WandSparkles size={16} />
-                  Clean summary
-                </div>
-              </div>
-            </section>
-
-            <div className="feature-strip feature-strip-desktop">
-              {STRIP_ITEMS.map(({ icon: Icon, label, sub }) => (
-                <div className="feature-strip-item" key={label}>
-                  <div className="feature-strip-icon"><Icon size={18} /></div>
-                  <div>
-                    <div className="feature-strip-label">{label}</div>
-                    <div className="feature-strip-sub">{sub}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="feature-marquee-outer">
-              <div className="feature-marquee-track" aria-hidden="true">
-                {[...STRIP_ITEMS, ...STRIP_ITEMS].map(({ icon: Icon, label, sub }, i) => (
-                  <div className="feature-marquee-card" key={i}>
-                    <div className="feature-marquee-icon"><Icon size={17} /></div>
-                    <div>
-                      <div className="feature-strip-label">{label}</div>
-                      <div className="feature-strip-sub">{sub}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div ref={noteInputRef}>
-              {authLoading ? (
-                <SkeletonNoteInput />
-              ) : (
-                <NoteInput
-                  text={noteText}
-                  onTextChange={handleTextChange}
-                  uploadedSource={uploadedSource}
-                  onUploadedSourceChange={setUploadedSource}
-                  onFileLoaded={handleFileLoaded}
-                  onSummarize={handleSummarize}
-                  isLoading={isLoading}
-                  onClear={handleClearSummary}
-                  editorMode={editorMode}
-                  onEditorModeChange={handleEditorModeChange}
-                  onboardingStep={onboardingStep}
-                />
-              )}
-            </div>
-
-            {error && (
-              <div style={{
-                marginTop: '1.5rem', padding: '0.875rem 1rem',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'hsla(0,84%,60%,0.1)', color: 'hsl(0,84%,60%)',
-                textAlign: 'center', border: '1px solid hsla(0,84%,60%,0.2)',
-                fontSize: '0.9375rem', wordBreak: 'break-word',
-                maxWidth: '800px', margin: '1.5rem auto 0',
-              }}>{error}</div>
-            )}
-
-            {authLoading && summary ? (
-              <SkeletonSummary />
-            ) : (
-              <SummaryResult
-                summary={summary}
-                onGenerateQuiz={handleQuizAction}
-                isGeneratingQuiz={isGeneratingQuiz}
-                hasQuiz={hasQuizForCurrentSummary}
-                isStreaming={isLoading}
-                userId={user?.id || ''}
-                noteId={noteId}
-                noteText={noteText}
-              />
-            )}
-          </>
+          <div className="workspace-content workspace-content-wide" style={{ padding: '2rem 1.5rem' }}>
+            <HomeView
+              {...{ noteText, handleTextChange, uploadedSource, setUploadedSource, handleFileLoaded, handleSummarize, isLoading, onClear: handleClearSummary, editorMode, handleEditorModeChange, onboardingStep, error, summary, handleQuizAction, isGeneratingQuiz, hasQuizForCurrentSummary, user, noteId, noteInputRef, goHowItWorks }}
+            />
+          </div>
         )}
 
         {currentView === 'features' && (
           <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center' }}><div className="skeleton-pulse" style={{width: '100%', height: '400px', borderRadius: '12px'}}></div></div>}>
-            <Features onGetStarted={handleGetStarted} />
+            <div className="workspace-content workspace-content-wide">
+              <Features onGetStarted={handleGetStarted} />
+            </div>
           </Suspense>
         )}
 
         {currentView === 'howItWorks' && (
           <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center' }}><div className="skeleton-pulse" style={{width: '100%', height: '400px', borderRadius: '12px'}}></div></div>}>
-            <HowItWorks onGetStarted={handleGetStarted} />
+            <div className="workspace-content workspace-content-wide">
+              <HowItWorks onGetStarted={handleGetStarted} />
+            </div>
           </Suspense>
         )}
 
         {currentView === 'quiz' && (
           <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center' }}><div className="skeleton-pulse" style={{width: '100%', height: '400px', borderRadius: '12px'}}></div></div>}>
-            <Quiz quizData={quizData} onGoHome={goHome} />
+            <div className="workspace-content workspace-content-wide" style={{ padding: '2rem 1.5rem' }}>
+              <Quiz quizData={quizData} onGoHome={goHome} />
+            </div>
           </Suspense>
         )}
-      </main>
 
-      <footer style={{
-        padding: '1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom))',
-        textAlign: 'center', color: 'var(--text-tertiary)',
-        fontSize: '0.8125rem', borderTop: '1px solid var(--border-color)',
-      }}>
-        &copy; 2026 NoteAI SaaS. Built for productivity.
-      </footer>
+        {isPlacholderView && (
+          <div className="workspace-content">
+            <PlaceholderView view={currentView} />
+          </div>
+        )}
+      </div>
+
+      <div className="workspace-right-panel">
+        <RightSidebar isOpen={rightPanelOpen} onClose={() => setRightPanelOpen(false)} />
+      </div>
+
+      <div className="workspace-statusbar">
+        <StatusBar
+          wordCount={noteText ? noteText.split(/\s+/).filter(Boolean).length : 0}
+          charCount={noteText.length}
+          isStreaming={isLoading}
+          isAuthenticated={!!user}
+          editorMode={editorMode}
+        />
+      </div>
 
       <AnimatePresence>
         {isAuthOpen && <Auth isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />}
       </AnimatePresence>
 
-      {/* Onboarding overlay */}
       {showOnboarding && (
         <Onboarding
           step={onboardingStep}
@@ -401,108 +493,15 @@ function AppContent() {
           color: var(--text-secondary);
         }
         .hero-pill svg { color: var(--accent-primary); }
-        .feature-strip-label {
-          font-size: 0.875rem;
-          font-weight: 700;
-          color: var(--text-primary);
-          margin-bottom: 0.2rem;
-          line-height: 1.2;
-        }
-        .feature-strip-sub {
-          font-size: 0.76rem;
-          color: var(--text-secondary);
-          line-height: 1.5;
-        }
-        .feature-strip-desktop {
-          display: grid;
-          grid-template-columns: repeat(5, 1fr);
-          gap: 0;
-          max-width: 1080px;
-          margin: 0 auto 2rem;
-          border-radius: var(--radius-lg);
-          border: 1px solid var(--border-color);
-          background-color: var(--bg-secondary);
-          overflow: hidden;
-        }
-        .feature-strip-item {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.75rem;
-          padding: 1.125rem 1rem;
-          border-right: 1px solid var(--border-color);
-        }
-        .feature-strip-item:last-child { border-right: none; }
-        .feature-strip-icon {
-          width: 36px; height: 36px; min-width: 36px;
-          border-radius: var(--radius-sm);
-          background: linear-gradient(135deg, hsla(262,80%,60%,0.16), hsla(262,80%,60%,0.07));
-          border: 1px solid hsla(262,80%,60%,0.2);
-          display: flex; align-items: center; justify-content: center;
-          color: var(--accent-primary);
-          margin-top: 2px;
-        }
-        @media (max-width: 959px) {
-          .feature-strip-desktop { grid-template-columns: repeat(3, 1fr); }
-          .feature-strip-item:nth-child(3) { border-right: none; }
-          .feature-strip-item:nth-child(4),
-          .feature-strip-item:nth-child(5) { border-top: 1px solid var(--border-color); }
-        }
-        .feature-marquee-outer {
-          display: none;
-          position: relative;
-          width: 100%;
-          overflow: hidden;
-          margin-bottom: 1.25rem;
-          -webkit-mask-image:
-            linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
-          mask-image:
-            linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%);
-        }
-        .feature-marquee-track {
-          display: flex;
-          gap: 0.75rem;
-          width: max-content;
-          padding: 0.25rem 0;
-          animation: marquee-scroll 35s linear infinite;
-          will-change: transform;
-        }
-        .feature-marquee-track:hover,
-        .feature-marquee-outer:hover .feature-marquee-track {
-          animation-play-state: paused;
-        }
-        @keyframes marquee-scroll {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .feature-marquee-card {
-          display: flex;
-          align-items: flex-start;
-          gap: 0.625rem;
-          width: 195px;
-          flex-shrink: 0;
-          padding: 0.875rem 1rem;
-          border-radius: var(--radius-md);
-          border: 1px solid var(--border-color);
-          background-color: var(--bg-secondary);
-          box-shadow: var(--shadow-sm);
-        }
-        .feature-marquee-icon {
-          width: 32px; height: 32px; min-width: 32px;
-          border-radius: var(--radius-sm);
-          background: linear-gradient(135deg, hsla(262,80%,60%,0.16), hsla(262,80%,60%,0.07));
-          border: 1px solid hsla(262,80%,60%,0.2);
-          display: flex; align-items: center; justify-content: center;
-          color: var(--accent-primary);
-          margin-top: 2px;
-          flex-shrink: 0;
-        }
         @media (max-width: 639px) {
-          .feature-strip-desktop { display: none !important; }
-          .feature-marquee-outer { display: block; }
           .hero-ctas { gap: 0.625rem; }
           .hero-cta-primary { width: 100%; justify-content: center; }
           .hero-cta-ghost   { width: 100%; justify-content: center; }
           .hero-pills { gap: 0.625rem; }
+        }
+        .topbar-mobile-toggle { display: none; }
+        @media (max-width: 767px) {
+          .topbar-mobile-toggle { display: flex !important; }
         }
       `}</style>
     </div>
