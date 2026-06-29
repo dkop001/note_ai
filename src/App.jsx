@@ -1,12 +1,14 @@
 import { useRef, useState, useEffect, lazy, Suspense, useCallback } from 'react';
 import NoteInput from './components/NoteInput';
+import NoteWorkspace from './features/editor/NoteWorkspace';
 import SummaryResult from './components/SummaryResult';
 import Auth from './components/Auth';
 import Onboarding from './components/Onboarding';
-import TopBar from './components/TopBar';
-import LeftSidebar from './components/LeftSidebar';
-import RightSidebar from './components/RightSidebar';
-import StatusBar from './components/StatusBar';
+import TopBar from './components/workspace/TopBar';
+import Sidebar from './components/workspace/Sidebar';
+import AIPanel from './components/workspace/AIPanel';
+import StatusBar from './components/workspace/StatusBar';
+import CommandPalette from './components/workspace/CommandPalette';
 import { SkeletonNoteInput, SkeletonSummary } from './components/Skeleton';
 import { summarizeNotes, generateQuizFromSummary } from './lib/ai';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -15,8 +17,12 @@ import { AnimatePresence } from 'framer-motion';
 import {
   BrainCircuit, FileText, Sparkles, WandSparkles,
   Zap, Shield, ArrowRight, PlayCircle,
-  LayoutGrid, BookOpen, ClipboardPaste,
+  LayoutGrid, BookOpen, ClipboardPaste, Share2,
 } from 'lucide-react';
+import HomeDashboard from './features/search/HomeDashboard';
+import StudyCenter from './features/study/StudyCenter';
+import { useNoteStore } from './store/noteStore';
+import { useAppStore } from './store/appStore';
 
 const Quiz = lazy(() => import('./components/Quiz'));
 const HowItWorks = lazy(() => import('./components/HowItWorks'));
@@ -30,7 +36,7 @@ const STRIP_ITEMS = [
   { icon: FileText,      label: 'PDF & file support',    sub: 'Upload PDFs, docs, or raw text.' },
 ];
 
-const PLACEHOLDER_VIEWS = ['notes', 'ai', 'study', 'graph', 'search', 'settings'];
+const PLACEHOLDER_VIEWS = ['ai', 'graph', 'search', 'settings'];
 
 function HomeView({ noteText, handleTextChange, uploadedSource, setUploadedSource, handleFileLoaded, handleSummarize, isLoading, onClear, editorMode, handleEditorModeChange, onboardingStep, error, summary, handleQuizAction, isGeneratingQuiz, hasQuizForCurrentSummary, user, noteId, noteInputRef, goHowItWorks }) {
   return (
@@ -201,9 +207,7 @@ function PlaceholderView({ view }) {
       </div>
     </div>
   );
-}
-
-function AppContent() {
+}function AppContent() {
   const [summary, setSummary]               = useState('');
   const [noteText, setNoteText]             = useState('');
   const [uploadedSource, setUploadedSource] = useState({ name: '', text: '', type: '' });
@@ -211,28 +215,38 @@ function AppContent() {
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [error, setError]                   = useState('');
   const [isAuthOpen, setIsAuthOpen]         = useState(false);
-  const [currentView, setCurrentView]       = useState('home');
   const [quizData, setQuizData]             = useState([]);
   const [quizSummary, setQuizSummary]       = useState('');
   const [editorMode, setEditorMode]         = useState('simple');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [noteId, setNoteId]                 = useState('');
-  const [sidebarOpen, setSidebarOpen]       = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const { user, loading: authLoading } = useAuth();
 
+  const { user } = useAuth();
   const noteInputRef = useRef(null);
 
+  // Zustand Store states
+  const { activeView, setActiveView, rightPanelOpen, sidebarCollapsed, openCmd } = useAppStore();
+  const { notes, activeNoteId, setActiveNote, addNote, updateNote, deleteNote, getAICache, setAICache } = useNoteStore();
+
+  const activeNote = notes.find((n) => n.id === activeNoteId);
+
+  // Sync active note selection to local input states
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768) setSidebarOpen(false);
-      else setSidebarOpen(true);
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (activeNoteId) {
+      const active = notes.find((n) => n.id === activeNoteId);
+      if (active) {
+        setNoteId(active.id);
+        setNoteText(active.content || '');
+        const cached = getAICache(active.id, 'summary');
+        setSummary(cached || '');
+      }
+    } else {
+      setNoteId('');
+      setNoteText('');
+      setSummary('');
+    }
+  }, [activeNoteId, notes, getAICache]);
 
   useEffect(() => {
     if (user && !user?.user_metadata?.onboarding_complete) {
@@ -253,12 +267,6 @@ function AppContent() {
   };
 
   useEffect(() => {
-    if (!noteId) {
-      setNoteId(crypto.randomUUID?.() || Math.random().toString(36).slice(2));
-    }
-  }, [noteId]);
-
-  useEffect(() => {
     const checkMobile = () => {
       const isMobile = window.matchMedia('(max-width: 639px)').matches || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
       if (isMobile) {
@@ -272,13 +280,13 @@ function AppContent() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const goHome = () => { setCurrentView('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const goFeatures = () => { setCurrentView('features'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const goHowItWorks = () => { setCurrentView('howItWorks'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goHome = () => { setActiveView('home'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goFeatures = () => { setActiveView('features'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goHowItWorks = () => { setActiveView('howItWorks'); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   const handleGetStarted = () => {
-    if (currentView !== 'home') {
-      setCurrentView('home');
+    if (activeView !== 'home') {
+      setActiveView('home');
       setTimeout(() => noteInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
     } else {
       noteInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -292,8 +300,13 @@ function AppContent() {
       updateOnboardingStep(4);
     }
     try {
+      let accumulated = '';
       await summarizeNotes(text, (chunk) => {
-        setSummary((prev) => prev + chunk);
+        accumulated += chunk;
+        setSummary(accumulated);
+        if (activeNoteId) {
+          setAICache(activeNoteId, 'summary', accumulated);
+        }
       });
     }
     catch (err) { setError(err.message || 'Something went wrong. Please try again.'); }
@@ -305,7 +318,10 @@ function AppContent() {
     setIsGeneratingQuiz(true); setError('');
     try {
       const quiz = await generateQuizFromSummary(summaryText);
-      setQuizData(quiz); setQuizSummary(summaryText); setCurrentView('quiz');
+      setQuizData(quiz); setQuizSummary(summaryText); setActiveView('quiz');
+      if (activeNoteId) {
+        setAICache(activeNoteId, 'quiz', quiz);
+      }
     } catch (err) { setError(err.message || 'Failed to generate quiz. Please try again.'); }
     finally { setIsGeneratingQuiz(false); }
   };
@@ -315,25 +331,58 @@ function AppContent() {
   const handleTextChange = (text) => {
     setNoteText(text);
     if (uploadedSource.name || uploadedSource.text || uploadedSource.type) resetUploadedSource();
+    if (activeNoteId) {
+      const lines = text.trim().split('\n');
+      const firstLine = lines[0] || '';
+      const title = firstLine.replace(/[#*`_-]/g, '').trim().slice(0, 35);
+      updateNote(activeNoteId, {
+        content: text,
+        title: title || 'Untitled Note',
+      });
+    }
   };
 
   const handleFileLoaded = (source) => {
     setNoteText(''); setUploadedSource(source); setSummary('');
-    setQuizData([]); setQuizSummary(''); setError(''); setCurrentView('home');
+    setQuizData([]); setQuizSummary(''); setError('');
+    const id = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+    addNote({
+      id,
+      title: source.name || 'Imported File',
+      content: source.text || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    setActiveNote(id);
+    setActiveView('notes');
   };
 
   const handleClearSummary = () => {
     setNoteText(''); resetUploadedSource(); setSummary('');
-    setQuizData([]); setQuizSummary(''); setCurrentView('home');
+    setQuizData([]); setQuizSummary('');
+    if (activeNoteId) {
+      updateNote(activeNoteId, { content: '' });
+      setAICache(activeNoteId, 'summary', null);
+      setAICache(activeNoteId, 'quiz', null);
+    }
+    setActiveView('home');
   };
 
   const handleOnboardingComplete = useCallback((template) => {
     setShowOnboarding(false);
     if (template) {
-      setNoteText(template.text);
-      handleGetStarted();
+      const id = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+      addNote({
+        id,
+        title: template.label || 'Onboarding Template',
+        content: template.text || '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      setActiveNote(id);
+      setActiveView('notes');
     }
-  }, []);
+  }, [addNote, setActiveNote, setActiveView]);
 
   const handleEditorModeChange = (mode) => {
     setEditorMode(mode);
@@ -341,49 +390,57 @@ function AppContent() {
 
   const hasQuizForCurrentSummary = summary && quizSummary === summary && quizData.length > 0;
   const handleQuizAction = (summaryText) => {
-    if (hasQuizForCurrentSummary) { setCurrentView('quiz'); return; }
+    if (hasQuizForCurrentSummary) { setActiveView('quiz'); return; }
     handleGenerateQuiz(summaryText);
   };
 
-  const handleViewChange = (view) => {
-    setCurrentView(view);
+  const handleCreateNote = useCallback(() => {
+    const id = crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+    addNote({
+      id,
+      title: 'Untitled Note',
+      content: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    setActiveNote(id);
+    setActiveView('notes');
+  }, [addNote, setActiveNote, setActiveView]);
+
+  const handleSelectNote = (id) => {
+    setActiveNote(id);
+    setActiveView('notes');
   };
 
-  const isPlacholderView = PLACEHOLDER_VIEWS.includes(currentView);
-  const isLandingView = currentView === 'home' || currentView === 'features' || currentView === 'howItWorks';
+  const handleDeleteNote = (id) => {
+    deleteNote(id);
+  };
+
+  const isPlacholderView = PLACEHOLDER_VIEWS.includes(activeView);
 
   return (
-    <div className={`workspace-shell${rightPanelOpen ? ' has-right-panel' : ''}`}>
+    <div className={`workspace-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${rightPanelOpen ? 'has-right-panel' : ''}`}>
       <div className="workspace-topbar">
-        <TopBar
-          currentView={currentView}
-          onViewChange={handleViewChange}
-          onAuthClick={() => setIsAuthOpen(true)}
-          onToggleSidebar={() => setSidebarOpen(s => !s)}
-          sidebarOpen={sidebarOpen}
-          onToggleRightPanel={() => setRightPanelOpen(p => !p)}
-          rightPanelOpen={rightPanelOpen}
-        />
+        <TopBar noteTitle={activeNote?.title} />
       </div>
 
       <div className="workspace-sidebar">
-        <LeftSidebar
-          currentView={currentView}
-          onViewChange={handleViewChange}
-          isOpen={sidebarOpen}
+        <Sidebar
+          onNewNote={handleCreateNote}
+          onDeleteNote={handleDeleteNote}
+          onSelectNote={handleSelectNote}
+          loadingNotes={false}
         />
       </div>
 
       <div className="workspace-main">
-        {currentView === 'home' && (
-          <div className="workspace-content workspace-content-wide" style={{ padding: '2rem 1.5rem' }}>
-            <HomeView
-              {...{ noteText, handleTextChange, uploadedSource, setUploadedSource, handleFileLoaded, handleSummarize, isLoading, onClear: handleClearSummary, editorMode, handleEditorModeChange, onboardingStep, error, summary, handleQuizAction, isGeneratingQuiz, hasQuizForCurrentSummary, user, noteId, noteInputRef, goHowItWorks }}
-            />
-          </div>
+        {/* ── Dashboard Home ── */}
+        {activeView === 'home' && (
+          <HomeDashboard onNewNote={handleCreateNote} />
         )}
 
-        {currentView === 'features' && (
+        {/* ── Legacy landing views ── */}
+        {activeView === 'features' && (
           <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center' }}><div className="skeleton-pulse" style={{width: '100%', height: '400px', borderRadius: '12px'}}></div></div>}>
             <div className="workspace-content workspace-content-wide">
               <Features onGetStarted={handleGetStarted} />
@@ -391,7 +448,7 @@ function AppContent() {
           </Suspense>
         )}
 
-        {currentView === 'howItWorks' && (
+        {activeView === 'howItWorks' && (
           <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center' }}><div className="skeleton-pulse" style={{width: '100%', height: '400px', borderRadius: '12px'}}></div></div>}>
             <div className="workspace-content workspace-content-wide">
               <HowItWorks onGetStarted={handleGetStarted} />
@@ -399,7 +456,22 @@ function AppContent() {
           </Suspense>
         )}
 
-        {currentView === 'quiz' && (
+        {/* ── Notes workspace — powered by NoteWorkspace ── */}
+        {activeView === 'notes' && (
+          <NoteWorkspace
+            onStatsChange={({ wordCount, charCount }) => {
+              setNoteText(wordCount.toString()); // repurpose as signal for statusbar
+            }}
+          />
+        )}
+
+        {/* ── Study Center ── */}
+        {activeView === 'study' && (
+          <StudyCenter />
+        )}
+
+        {/* ── Quiz ── */}
+        {activeView === 'quiz' && (
           <Suspense fallback={<div style={{ padding: '4rem', textAlign: 'center' }}><div className="skeleton-pulse" style={{width: '100%', height: '400px', borderRadius: '12px'}}></div></div>}>
             <div className="workspace-content workspace-content-wide" style={{ padding: '2rem 1.5rem' }}>
               <Quiz quizData={quizData} onGoHome={goHome} />
@@ -407,26 +479,27 @@ function AppContent() {
           </Suspense>
         )}
 
-        {isPlacholderView && (
+        {/* ── Remaining placeholder views ── */}
+        {isPlacholderView && activeView !== 'study' && (
           <div className="workspace-content">
-            <PlaceholderView view={currentView} />
+            <PlaceholderView view={activeView} />
           </div>
         )}
       </div>
 
       <div className="workspace-right-panel">
-        <RightSidebar isOpen={rightPanelOpen} onClose={() => setRightPanelOpen(false)} />
+        <AIPanel />
       </div>
 
       <div className="workspace-statusbar">
         <StatusBar
           wordCount={noteText ? noteText.split(/\s+/).filter(Boolean).length : 0}
           charCount={noteText.length}
-          isStreaming={isLoading}
-          isAuthenticated={!!user}
-          editorMode={editorMode}
         />
       </div>
+
+      {/* ── Global Command Palette ── */}
+      <CommandPalette onNewNote={handleCreateNote} />
 
       <AnimatePresence>
         {isAuthOpen && <Auth isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />}
