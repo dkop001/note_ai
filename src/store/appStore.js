@@ -34,7 +34,17 @@ export const useAppStore = create((set, get) => ({
 
   // Active view
   activeView: 'home', // 'home' | 'notes' | 'study' | 'search' | 'settings'
-  setActiveView: (v) => set({ activeView: v }),
+  setActiveView: (v) => set({ activeView: v, sidebarMode: 'nav' }),
+
+  // Sidebar mode: 'nav' | 'chatHistory'
+  sidebarMode: 'nav',
+  setSidebarMode: (m) => set({ sidebarMode: m }),
+  openChatHistory: () => set({ sidebarMode: 'chatHistory' }),
+  closeChatHistory: () => set({ sidebarMode: 'nav' }),
+
+  // Chat history panel state
+  viewingSessionId: null,
+  setViewingSessionId: (id) => set({ viewingSessionId: id }),
 
   // Mobile sidebar
   mobileSidebarOpen: false,

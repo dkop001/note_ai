@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store/appStore';
 import { useNoteStore } from '../../store/noteStore';
+import ChatHistoryPanel from './ChatHistoryPanel';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const IconPlus = () => (
@@ -37,11 +38,9 @@ const IconFile = () => (
     <path d="M8.5 1v2.5H11" stroke="currentColor" strokeWidth="1.2"/>
   </svg>
 );
-const IconMore = () => (
-  <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-    <circle cx="6.5" cy="2.5" r="1" fill="currentColor"/>
-    <circle cx="6.5" cy="6.5" r="1" fill="currentColor"/>
-    <circle cx="6.5" cy="10.5" r="1" fill="currentColor"/>
+const IconChat = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <path d="M1.5 2.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H5L2 12V8.5H2.5a1 1 0 0 1-1-1v-5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
   </svg>
 );
 const IconTrash = () => (
@@ -57,10 +56,11 @@ const IconSpinner = () => (
 
 // ── Navigation items ──────────────────────────────────────────────────────────
 const NAV = [
-  { id: 'home',     label: 'Home',   Icon: IconHome   },
-  { id: 'notes',    label: 'Notes',  Icon: IconNotes  },
-  { id: 'study',    label: 'Study',  Icon: IconStudy  },
-  { id: 'search',   label: 'Search', Icon: IconSearch },
+  { id: 'home',     label: 'Home',        Icon: IconHome   },
+  { id: 'notes',    label: 'Notes',       Icon: IconNotes  },
+  { id: 'study',    label: 'Study',       Icon: IconStudy  },
+  { id: 'chatHistory', label: 'Chat History', Icon: IconChat },
+  { id: 'search',   label: 'Search',      Icon: IconSearch },
 ];
 
 // ── Note file row ─────────────────────────────────────────────────────────────
@@ -98,9 +98,32 @@ function NoteRow({ note, isActive, onSelect, onDelete }) {
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 export default function Sidebar({ onNewNote, onDeleteNote, onSelectNote, loadingNotes }) {
-  const { activeView, setActiveView, mobileSidebarOpen } = useAppStore();
+  const { activeView, setActiveView, mobileSidebarOpen, sidebarMode, openChatHistory, closeChatHistory } = useAppStore();
   const { notes, activeNoteId } = useNoteStore();
 
+  const handleNavClick = (id) => {
+    if (id === 'chatHistory') {
+      openChatHistory();
+    } else {
+      closeChatHistory();
+      setActiveView(id);
+    }
+  };
+
+  // If in chat history mode, show ChatHistoryPanel
+  if (sidebarMode === 'chatHistory') {
+    return (
+      <aside
+        className={`sidebar workspace-sidebar ${mobileSidebarOpen ? 'mobile-open' : ''}`}
+        aria-label="Chat history"
+        id="workspace-sidebar"
+      >
+        <ChatHistoryPanel />
+      </aside>
+    );
+  }
+
+  // Normal navigation mode
   return (
     <aside
       className={`sidebar workspace-sidebar ${mobileSidebarOpen ? 'mobile-open' : ''}`}
@@ -112,8 +135,8 @@ export default function Sidebar({ onNewNote, onDeleteNote, onSelectNote, loading
         {NAV.map(({ id, label, Icon }) => (
           <button
             key={id}
-            className={`sidebar-item ${activeView === id ? 'active' : ''}`}
-            onClick={() => setActiveView(id)}
+            className={`sidebar-item ${(activeView === id || (id === 'chatHistory' && sidebarMode === 'chatHistory')) ? 'active' : ''}`}
+            onClick={() => handleNavClick(id)}
             id={`sidebar-nav-${id}`}
           >
             <span className="sidebar-item-icon"><Icon /></span>

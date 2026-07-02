@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '../../store/appStore';
 import { useNoteStore } from '../../store/noteStore';
+import { useAuth } from '../../context/AuthContext';
+import { getOrCreateSession, saveConversation } from '../../lib/chatApi';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const Ico = {
@@ -46,6 +48,12 @@ const Ico = {
   check: () => (
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
       <path d="M2 7l3.5 3.5L11 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  save: () => (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M11 13H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5.5l3 3v8a1 1 0 0 1-1 1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+      <path d="M8 1v3H5M4.5 8h5M4.5 10.5h3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/>
     </svg>
   ),
   spinner: () => (
@@ -111,6 +119,7 @@ function ChatMessage({ msg, isLast, isLoading }) {
 export default function AIPanel() {
   const { rightPanelTab, setRightPanelTab, toggleRightPanel } = useAppStore();
   const { getActiveNote, noteAICache, setAICache } = useNoteStore();
+  const { user } = useAuth();
 
   // Chat state
   const [chatMessages, setChatMessages] = useState([
@@ -120,6 +129,11 @@ export default function AIPanel() {
   const [chatLoading, setChatLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const chatInputRef = useRef(null);
+
+  // Save state
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState(null);
 
   // Summary state
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -139,29 +153,83 @@ export default function AIPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
-  // ── Chat ──────────────────────────────────────────────────────────────────
+  // Reset chat when switching notes
+  useEffect(() => {
+    setChatSessionId(null);
+    setSaveSuccess(false);
+    setChatMessages([
+      { role: 'ai', text: "Hi! I'm your Note AI assistant. Select a note and ask me to summarize it, generate a quiz, or ask any question about your knowledge." }
+    ]);
+  }, [activeNote?.id]);
+
+  // ── Chat (with proper SSE streaming) ──────────────────────────────────────
   const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text || chatLoading) return;
     setChatInput('');
     setChatMessages(m => [...m, { role: 'user', text }]);
     setChatLoading(true);
+
     try {
-      const body = {
-        message: text,
-        history: chatMessages.map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text })),
-        noteContent: activeNote?.content?.replace(/<[^>]*>/g, '') ?? '',
-      };
-      const res = await fetch('/api/chat', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          userId: user?.id || '',
+          noteId: activeNote?.id || '',
+          message: text,
+          history: chatMessages.map(m => ({
+            role: m.role === 'ai' ? 'assistant' : 'user',
+            content: m.text,
+          })),
+          noteText: activeNote?.content?.replace(/<[^>]*>/g, '') ?? '',
+        }),
       });
-      const data = await res.json();
-      const reply = data.reply ?? data.message ?? "Sorry, I couldn't process that.";
-      setChatMessages(m => [...m, { role: 'ai', text: reply }]);
-    } catch {
-      setChatMessages(m => [...m, { role: 'ai', text: 'Connection error. Please check your API and try again.' }]);
+
+      if (!response.ok || !response.body) {
+        throw new Error('Failed to get response');
+      }
+
+      // Read SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let aiResponse = '';
+
+      // Add empty assistant message to populate
+      setChatMessages(prev => [...prev, { role: 'ai', text: '' }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.error) throw new Error(data.error);
+              if (data.content) {
+                aiResponse += data.content;
+                setChatMessages(prev => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: 'ai', text: aiResponse };
+                  return updated;
+                });
+              }
+            } catch (e) {
+              // ignore parse errors from incomplete chunks
+            }
+          }
+        }
+      }
+    } catch (error) {
+      setChatMessages(prev => [
+        ...prev.slice(0, -1), // remove empty assistant msg
+        { role: 'user', text },
+        { role: 'ai', text: 'Sorry, I encountered an error. Please try again.' },
+      ]);
     } finally {
       setChatLoading(false);
     }
@@ -176,6 +244,26 @@ export default function AIPanel() {
     setChatInput(e.target.value);
     e.target.style.height = 'auto';
     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+  };
+
+  // ── Save Chat ─────────────────────────────────────────────────────────────
+  const handleSaveChat = async () => {
+    if (!user?.id || !activeNote?.id) return;
+    // Don't save if there's only the initial greeting
+    if (chatMessages.length <= 1) return;
+
+    setSaveLoading(true);
+    try {
+      const session = await getOrCreateSession(user.id, activeNote.id, activeNote.title);
+      setChatSessionId(session.id);
+      await saveConversation(session.id, chatMessages.filter(m => m.role !== 'ai' || m.text !== chatMessages[0]?.text));
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save chat:', err);
+    } finally {
+      setSaveLoading(false);
+    }
   };
 
   // ── Summarize ────────────────────────────────────────────────────────────
@@ -336,7 +424,7 @@ export default function AIPanel() {
             </div>
           )}
 
-          {/* Chat input */}
+          {/* Chat input + Save button */}
           <div className="chat-input-area">
             <textarea
               ref={chatInputRef}
@@ -361,6 +449,31 @@ export default function AIPanel() {
               {chatLoading ? <Ico.spinner /> : <Ico.send />}
             </button>
           </div>
+
+          {/* Save chat button */}
+          {chatMessages.length > 1 && (
+            <div style={{ padding: 'var(--sp-3) var(--sp-5) var(--sp-4)' }}>
+              <button
+                className="ai-action-btn"
+                onClick={handleSaveChat}
+                disabled={saveLoading || saveSuccess}
+                id="ai-save-chat-btn"
+                style={{
+                  width: '100%',
+                  background: saveSuccess
+                    ? 'linear-gradient(135deg, hsla(142,71%,45%,.15), hsla(142,71%,45%,.08))'
+                    : undefined,
+                  borderColor: saveSuccess ? 'hsla(142,71%,45%,.3)' : undefined,
+                  color: saveSuccess ? 'hsl(142,71%,45%)' : undefined,
+                }}
+              >
+                <span className="btn-icon">
+                  {saveLoading ? <Ico.spinner /> : saveSuccess ? <Ico.check /> : <Ico.save />}
+                </span>
+                {saveLoading ? 'Saving…' : saveSuccess ? 'Saved to history!' : 'Save Chat'}
+              </button>
+            </div>
+          )}
         </>
       )}
 
